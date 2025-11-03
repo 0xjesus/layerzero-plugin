@@ -1,6 +1,7 @@
 const path = require("node:path");
 const { rspack } = require("@rspack/core");
-const { withZephyr } = require("zephyr-rspack-plugin");
+// Use local stub for zephyr (not needed for local dev)
+const { withZephyr } = require("./zephyr-rspack-plugin");
 
 const pkg = require("./package.json");
 

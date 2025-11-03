@@ -6,52 +6,70 @@ import { contract } from "./contract";
 import { DataProviderService } from "./service";
 
 /**
- * Data Provider Plugin Template - Template for building single-provider bridge data adapters.
+ * LayerZero (Stargate) Bridge Data Provider Plugin
  *
- * This template demonstrates how to implement the data provider contract for one provider.
- * Choose ONE provider (LayerZero, Wormhole, CCTP, Across, deBridge, Axelar, Li.Fi) and
- * replace the mock implementation with actual API calls.
- * 
+ * Collects market data from LayerZero's Stargate protocol:
+ * - Volume metrics (24h, 7d, 30d)
+ * - Rate quotes and fees
+ * - Liquidity depth analysis
+ * - Supported assets across chains
+ *
+ * Uses Stargate Finance REST API (https://stargate.finance/api/v1)
  */
 export default createPlugin({
-  id: "@every-plugin/template",
+  id: "@0xjesus/layerzero-plugin",
 
   variables: z.object({
-    baseUrl: z.string().url().default("https://api.example.com"),
-    timeout: z.number().min(1000).max(60000).default(10000),
+    baseUrl: z.string().url().default("https://stargate.finance/api/v1"),
+    defillamaBaseUrl: z.string().url().default("https://api.llama.fi"),
+    timeout: z.number().min(1000).max(60000).default(15000),
+    maxRequestsPerSecond: z.number().min(1).max(100).default(10),
   }),
 
   secrets: z.object({
-    apiKey: z.string().min(1, "API key is required"),
+    // Stargate API doesn't require an API key, but we keep this for consistency
+    // and potential future use with premium endpoints
+    apiKey: z.string().default("not-required"),
   }),
 
   contract,
 
   initialize: (config) =>
     Effect.gen(function* () {
+      console.log("[LayerZero Plugin] Initializing...");
+
       // Create service instance with config
       const service = new DataProviderService(
         config.variables.baseUrl,
+        config.variables.defillamaBaseUrl,
         config.secrets.apiKey,
-        config.variables.timeout
+        config.variables.timeout,
+        config.variables.maxRequestsPerSecond
       );
 
       // Test the connection during initialization
+      console.log("[LayerZero Plugin] Testing connectivity...");
       yield* service.ping();
+      console.log("[LayerZero Plugin] Successfully connected to Stargate API");
 
       return { service };
     }),
 
-  shutdown: () => Effect.void,
+  shutdown: () => {
+    console.log("[LayerZero Plugin] Shutting down...");
+    return Effect.void;
+  },
 
   createRouter: (context, builder) => {
     const { service } = context;
 
     return {
       getSnapshot: builder.getSnapshot.handler(async ({ input }) => {
+        console.log(`[LayerZero Plugin] getSnapshot called with ${input.routes.length} routes`);
         const snapshot = await Effect.runPromise(
           service.getSnapshot(input)
         );
+        console.log(`[LayerZero Plugin] Snapshot fetched successfully`);
         return snapshot;
       }),
 
