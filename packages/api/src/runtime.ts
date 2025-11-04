@@ -1,14 +1,14 @@
 import { createPluginRuntime, type PluginBinding } from "every-plugin";
 
-import type DataProviderTemplatePlugin from "@every-plugin/template";
+import type DataProviderTemplatePlugin from "@layerzero/data-provider";
 
 type AppBindings = {
-  "@every-plugin/template": PluginBinding<typeof DataProviderTemplatePlugin>;
+  "@layerzero/data-provider": PluginBinding<typeof DataProviderTemplatePlugin>;
 };
 
 const runtime = createPluginRuntime<AppBindings>({
   registry: {
-    "@every-plugin/template": {
+    "@layerzero/data-provider": {
       remoteUrl: "http://localhost:3014/remoteEntry.js",
     },
   },
@@ -17,10 +17,12 @@ const runtime = createPluginRuntime<AppBindings>({
   },
 });
 
-export const { router: dataProviderRouter } = await runtime.usePlugin("@every-plugin/template", {
+export const { router: dataProviderRouter } = await runtime.usePlugin("@layerzero/data-provider", {
   variables: {
-    baseUrl: process.env.DATA_PROVIDER_BASE_URL || "https://api.example.com",
-    timeout: Number(process.env.DATA_PROVIDER_TIMEOUT) || 10000,
+    baseUrl: process.env.DATA_PROVIDER_BASE_URL || "https://stargate.finance/api/v1",
+    defillamaBaseUrl: process.env.DEFILLAMA_BASE_URL || "https://api.llama.fi",
+    timeout: Number(process.env.DATA_PROVIDER_TIMEOUT) || 15000,
+    maxRequestsPerSecond: Number(process.env.MAX_REQUESTS_PER_SECOND) || 10,
   },
   secrets: { apiKey: "{{DATA_PROVIDER_API_KEY}}" },
 });

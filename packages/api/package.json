@@ -16,7 +16,7 @@
   },
   "devDependencies": {
     "tsdown": "^0.15.5",
-    "@every-plugin/template": "workspace:*"
+    "@layerzero/data-provider": "workspace:*"
   },
   "peerDependencies": {
     "typescript": "^5"

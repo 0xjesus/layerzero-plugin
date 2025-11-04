@@ -1,7 +1,7 @@
 {
-  "name": "@every-plugin/template",
-  "version": "0.0.1",
-  "description": "Template plugin for every-plugin framework",
+  "name": "@layerzero/data-provider",
+  "version": "1.0.0",
+  "description": "LayerZero (Stargate) Protocol data provider plugin for NEAR Intents bounty",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "type": "module",

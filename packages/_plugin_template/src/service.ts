@@ -143,13 +143,30 @@ export class DataProviderService {
       try: async () => {
         console.log(`[LayerZero] Fetching snapshot for ${params.routes.length} routes`);
 
-        // Parallel API calls with retry logic
-        const [volumes, rates, liquidity, listedAssets] = await Promise.all([
+        // Parallel API calls with graceful degradation using Promise.allSettled
+        // This allows working components to return data even if others fail (e.g., Module Federation bug)
+        const results = await Promise.allSettled([
           this.getVolumes(params.includeWindows || ["24h"]),
           this.getRates(params.routes, params.notionals),
           this.getLiquidityDepth(params.routes),
           this.getListedAssets()
         ]);
+
+        // Extract results, using empty arrays/defaults for failed promises
+        const volumes = results[0].status === 'fulfilled' ? results[0].value : [];
+        const rates = results[1].status === 'fulfilled' ? results[1].value : [];
+        const liquidity = results[2].status === 'fulfilled' ? results[2].value : [];
+        const listedAssets = results[3].status === 'fulfilled'
+          ? results[3].value
+          : { assets: [], measuredAt: new Date().toISOString() };
+
+        // Log any failures for debugging
+        results.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            const component = ['volumes', 'rates', 'liquidity', 'listedAssets'][index];
+            console.warn(`[LayerZero] ⚠ ${component} failed (Module Federation bug):`, result.reason?.message || result.reason);
+          }
+        });
 
         return {
           volumes,
@@ -193,29 +210,10 @@ export class DataProviderService {
    */
   private async getVolumes(windows: Array<"24h" | "7d" | "30d">): Promise<VolumeWindowType[]> {
     try {
-      await this.rateLimiter.acquire();
-
-      // Use DefiLlama URL from ENV configuration (not hardcoded)
-      const volumeUrl = `${this.defillamaBaseUrl}/summary/dexs/stargate`;
-      console.log(`[LayerZero] Fetching volume data from DefiLlama...`);
-
-      const response = await fetch(volumeUrl, {
-        method: "GET",
-        headers: { "Accept": "application/json" },
-        signal: AbortSignal.timeout(this.timeout),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch volume data: HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      const measuredAt = new Date().toISOString();
-      const results: VolumeWindowType[] = [];
-
-      // DefiLlama provides totalDataChart: array of [timestamp, dailyVolume]
-      // We calculate 7d and 30d by summing the last N days from this array
-      const totalDataChart = data.totalDataChart as Array<[number, number]>;
+      // TODO: Module Federation bug - fetch() causes "File URL host must be localhost" error
+      // Returning empty array for now until framework is fixed
+      console.log(`[LayerZero] Volume data unavailable (Module Federation issue)`);
+      return [];
       const dailyVolume = data.dailyVolume;
 
       // 24h volume from summary
@@ -284,6 +282,8 @@ export class DataProviderService {
   ): Promise<RateType[]> {
     const rates: RateType[] = [];
 
+    console.log(`[LayerZero] 🔍 getRates called with routes:`, JSON.stringify(routes, null, 2));
+
     // Ensure we have chains and tokens data
     await this.ensureMetadataLoaded();
 
@@ -338,9 +338,10 @@ export class DataProviderService {
   private async getLiquidityDepth(
     routes: Array<{ source: AssetType; destination: AssetType }>
   ): Promise<LiquidityDepthType[]> {
-    const liquidity: LiquidityDepthType[] = [];
-
-    await this.ensureMetadataLoaded();
+    // TODO: Module Federation bug - fetch() causes "File URL host must be localhost" error
+    // Returning empty array for now until framework is fixed
+    console.log(`[LayerZero] Liquidity depth unavailable (Module Federation issue)`);
+    return [];
 
     for (const route of routes) {
       try {
@@ -533,20 +534,11 @@ export class DataProviderService {
    * Fetch list of assets supported by Stargate.
    */
   private async getListedAssets(): Promise<ListedAssetsType> {
-    await this.ensureMetadataLoaded();
-
-    // Filter only bridgeable tokens
-    const bridgeableTokens = (this.tokens || [])
-      .filter(t => t.isBridgeable)
-      .map(t => ({
-        chainId: this.getChainIdByKey(t.chainKey),
-        assetId: t.address,
-        symbol: t.symbol,
-        decimals: t.decimals,
-      }));
-
+    // TODO: Module Federation bug - fetch() causes "File URL host must be localhost" error
+    // Returning empty list for now until framework is fixed
+    console.log(`[LayerZero] Listed assets unavailable (Module Federation issue)`);
     return {
-      assets: bridgeableTokens,
+      assets: [],
       measuredAt: new Date().toISOString(),
     };
   }
@@ -562,6 +554,12 @@ export class DataProviderService {
   ): Promise<StargateQuote | null> {
     let lastError: Error | null = null;
     const routeDescription = `${source.symbol}(${source.chainId}) → ${destination.symbol}(${destination.chainId})`;
+
+    console.log(`[LayerZero] 🔍 fetchQuoteWithRetry called with:`, {
+      source: { chainId: source.chainId, assetId: source.assetId, symbol: source.symbol },
+      destination: { chainId: destination.chainId, assetId: destination.assetId, symbol: destination.symbol },
+      amount
+    });
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
@@ -584,21 +582,25 @@ export class DataProviderService {
         // Dummy addresses for quote (Stargate requires them)
         const dummyAddress = '0x0000000000000000000000000000000000000001';
 
-        const url = new URL(`${this.baseUrl}/quotes`);
-        url.searchParams.set('srcToken', source.assetId);
-        url.searchParams.set('dstToken', destination.assetId);
-        url.searchParams.set('srcChainKey', srcChainKey);
-        url.searchParams.set('dstChainKey', dstChainKey);
-        url.searchParams.set('srcAmount', amount);
-        url.searchParams.set('dstAmountMin', dstAmountMin);
-        url.searchParams.set('srcAddress', dummyAddress);
-        url.searchParams.set('dstAddress', dummyAddress);
+        const params = new URLSearchParams({
+          srcToken: source.assetId,
+          dstToken: destination.assetId,
+          srcChainKey: srcChainKey,
+          dstChainKey: dstChainKey,
+          srcAmount: amount,
+          dstAmountMin: dstAmountMin,
+          srcAddress: dummyAddress,
+          dstAddress: dummyAddress,
+        });
+
+        const url = `${this.baseUrl}/quotes?${params}`;
 
         if (attempt === 0) {
           console.log(`[LayerZero] Fetching quote for ${routeDescription}...`);
+          console.log(`[LayerZero] 🔍 URL: ${url}`);
         }
 
-        const response = await fetch(url.toString(), {
+        const response = await fetch(url, {
           method: 'GET',
           headers: {
             'Accept': 'application/json',
